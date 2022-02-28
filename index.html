@@ -1,0 +1,75 @@
+<script>
+var modlinks = "https://raw.githubusercontent.com/hk-modding/modlinks/main/ModLinks.xml";
+var dependedBy = {};
+var cores = {}
+var graph = "";
+
+function xml2db(dom){
+    allMods = dom.querySelectorAll("Manifest");
+    var mods = {};
+    var getInnerText = function (element){
+        if(element && element.children.length){
+            let str= "";
+            for(var j = 0; j < element.children.length;j++){
+                str += getInnerText(element.children[j]) + ",#,"
+            }
+            return str;
+        } 
+        if(element){
+            return element.innerHTML;
+        }
+        return "";
+    }
+
+    allMods.forEach(mod => {
+        let modData = {};
+        for(var i =0; i < mod.children.length; i++){
+            modData[mod.children[i].tagName] = getInnerText(mod.children[i]).trim().replace("<![CDATA[","").replace("]]>","");
+        }
+        mods[modData.Name] = modData;
+    })
+    return mods;
+}
+
+function getDependentNames(mod,spacer = "->"){
+    var str = "";
+    str += spacer + mod.Name + "\n";
+    mod.mods?.forEach( mod => {
+        str += getDependentNames(mod,spacer+"->");
+    })
+    return str;
+}
+
+fetch(modlinks,myInit = {
+    method: 'GET',
+    mode: 'cors',
+    cache: 'default'
+}).then(response => response.text())
+.then(str => new window.DOMParser().parseFromString(str, "text/xml"))
+.then(data => window.mods = xml2db(data)).then(()=>{
+    Object.values(mods).forEach((mod)=>{
+        mod.Dependencies.split(",#,").forEach( dep => {
+            if(!dependedBy[dep]) { 
+                dependedBy[dep] = {name:dep,mods:[],isDependent:false};
+            }
+            dependedBy[dep].mods.push(mod);
+        })
+    })
+    Object.values(dependedBy).forEach(mod =>{
+        mod.mods?.map(childmod => childmod.mods = dependedBy[childmod.Name]?.mods)
+        mod.isDependent = mods[mod.name]?.Dependencies.split(",#,").length > 1;
+        if(!mod.isDependent){
+            window.cores[mod.name] = mod;
+        }
+    })
+    
+    Object.values(cores).forEach( core => {
+        if(core.name.length < 1) {return;}
+        graph += core.name + "\n"
+        core.mods.forEach( mod => graph += getDependentNames(mod))
+        graph += "\n";
+    })
+    console.log(graph);
+    document.write(graph.replace(/\n/g,"<br>"))
+})
+</script>
